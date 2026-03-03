@@ -7,10 +7,10 @@
 # ============================================================
 
 # ── CONFIGURATION ───────────────────────────────────────────
-SLACK_TOKEN="xoxb-your-token-here"        # Replace with your Slack Bot Token
+SLACK_TOKEN="xoxb-your-token-here"        # Need to replace
 # ────────────────────────────────────────────────────────────
 
-CLIENT=${1,,}  # converts input to lowercase
+CLIENT=${1,,}  # takes input and converts input to lowercase
 
 if [ -z "$CLIENT" ]; then
   echo "Please provide a client name. Example: ./create_client_channels.sh acmecorp"
