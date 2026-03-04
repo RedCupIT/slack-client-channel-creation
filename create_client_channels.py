@@ -7,42 +7,28 @@
 # ============================================================
 
 import sys
-import requests
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 # ── CONFIGURATION ───────────────────────────────────────────
 SLACK_TOKEN = "xoxb-your-token-here"        # Need to replace
 # ────────────────────────────────────────────────────────────
 
-def create_channel(token: str, name: str, is_private: bool, description: str):
+def create_channel(client: WebClient, name: str, is_private: bool, description: str):
     print(f"Creating: #{name} (private: {is_private})")
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-
-    # Create channel
-    response = requests.post(
-        "https://slack.com/api/conversations.create",
-        headers=headers,
-        json={"name": name, "is_private": is_private}
-    )
-    data = response.json()
-
-    if data.get("ok") and data.get("channel", {}).get("id"):
-        channel_id = data["channel"]["id"]
+    try:
+        # Create channel
+        response = client.conversations_create(name=name, is_private=is_private)
+        channel_id = response["channel"]["id"]
         print(f"   OK - Created #{name} (ID: {channel_id})")
 
         # Set channel description/purpose
-        requests.post(
-            "https://slack.com/api/conversations.setPurpose",
-            headers=headers,
-            json={"channel": channel_id, "purpose": description}
-        )
+        client.conversations_setPurpose(channel=channel_id, purpose=description)
         print("   Description set")
-    else:
-        error = data.get("error", "unknown error")
-        print(f"   FAILED to create #{name} - {error}")
+
+    except SlackApiError as e:
+        print(f"   FAILED to create #{name} - {e.response['error']}")
 
     print()
 
@@ -52,9 +38,10 @@ def main():
         print("Please provide a client name. Example: python create_client_channels.py acmecorp")
         sys.exit(1)
 
-    client = sys.argv[1].lower()
+    client_name = sys.argv[1].lower()
+    client = WebClient(token=SLACK_TOKEN)
 
-    print(f"Creating Slack channels for client: {client}")
+    print(f"Creating Slack channels for client: {client_name}")
     print("------------------------------------------------")
 
     # ============================================================
@@ -62,27 +49,27 @@ def main():
     # ============================================================
     channels = [
         {
-            "name":        f"client-{client}-it-support",
+            "name":        f"client-{client_name}-it-support",
             "is_private":  False,
-            "description": f"IT support channel for {client} staff to reach out to RCIT.",
+            "description": f"IT support channel for {client_name} staff to reach out to RCIT.",
             "label":       "public"
         },
         {
-            "name":        f"client-{client}-it-support-private",
+            "name":        f"client-{client_name}-it-support-private",
             "is_private":  True,
-            "description": f"Private channel for {client} leadership to communicate with RCIT.",
+            "description": f"Private channel for {client_name} leadership to communicate with RCIT.",
             "label":       "private"
         },
         {
-            "name":        f"client-{client}-it-announcements",
+            "name":        f"client-{client_name}-it-announcements",
             "is_private":  False,
-            "description": f"IT announcements and updates for {client}.",
+            "description": f"IT announcements and updates for {client_name}.",
             "label":       "public"
         },
         {
-            "name":        f"intl-{client}-it-support",
+            "name":        f"intl-{client_name}-it-support",
             "is_private":  False,
-            "description": f"Internal RCIT channel for {client} account - staff only.",
+            "description": f"Internal RCIT channel for {client_name} account - staff only.",
             "label":       "public"
         },
     ]
@@ -91,10 +78,10 @@ def main():
     #  CREATE THE CHANNELS
     # ────────────────────────────────────────────────────────────
     for ch in channels:
-        create_channel(SLACK_TOKEN, ch["name"], ch["is_private"], ch["description"])
+        create_channel(client, ch["name"], ch["is_private"], ch["description"])
 
     print("------------------------------------------------")
-    print(f"Done! All channels created for client: {client}")
+    print(f"Done! All channels created for client: {client_name}")
     print()
     print("Channels created:")
     for ch in channels:
