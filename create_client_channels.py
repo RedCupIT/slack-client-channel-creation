@@ -67,18 +67,21 @@ def main():
             "name":        f"client-{client_name}-it-support-private",
             "is_private":  True,
             "description": f"Private channel for {client_name} leadership to communicate with RCIT.",
+            "create_canvas": False,
             "label":       "private"
         },
         {
             "name":        f"client-{client_name}-it-announcements",
             "is_private":  False,
             "description": f"IT announcements and updates for {client_name}.",
+            "create_canvas": False,
             "label":       "public"
         },
         {
             "name":        f"intl-{client_name}-it-support",
             "is_private":  False,
             "description": f"Internal RCIT channel for {client_name} account - staff only.",
+            "create_canvas": False,
             "label":       "public"
         },
     ]
