@@ -11,10 +11,10 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 # ── CONFIGURATION ───────────────────────────────────────────
-SLACK_TOKEN = "xoxb-your-token-here"        # Need to replace
+SLACK_TOKEN = "xoxb-your-token-here"        # Need to replace with real token
 # ────────────────────────────────────────────────────────────
 
-def create_channel(client: WebClient, name: str, is_private: bool, description: str):
+def create_channel(client: WebClient, name: str, is_private: bool, description: str, create_canvas: bool, client_name: str):
     print(f"Creating: #{name} (private: {is_private})")
 
     try:
@@ -24,8 +24,16 @@ def create_channel(client: WebClient, name: str, is_private: bool, description: 
         print(f"   OK - Created #{name} (ID: {channel_id})")
 
         # Set channel description/purpose
-        client.conversations_setPurpose(channel=channel_id, purpose=description)
+        client.conversations_setPurpose(channel_id=channel_id, purpose=description)
         print("   Description set")
+
+        # Create canvas if create_canvas = "True"
+        if create_canvas:
+            client.conversations_canvases_create(
+                channel_id=channel_id, 
+                document_content={"type": "markdown", "markdown": IT_SUPPORT_CANVAS},
+                title="How to Get IT Support")
+
 
     except SlackApiError as e:
         print(f"   FAILED to create #{name} - {e.response['error']}")
@@ -45,13 +53,14 @@ def main():
     print("------------------------------------------------")
 
     # ============================================================
-    #  CHANNEL NAMING CONVENTIONS
+    #  Channel Attributes
     # ============================================================
     channels = [
         {
             "name":        f"client-{client_name}-it-support",
             "is_private":  False,
             "description": f"IT support channel for {client_name} staff to reach out to RCIT.",
+            "create_canvas": True,
             "label":       "public"
         },
         {
@@ -74,11 +83,18 @@ def main():
         },
     ]
 
+# ────────────────────────────────────────────────────────────
+# Canvas Templates
+# ────────────────────────────────────────────────────────────
+
+IT_SUPPORT_CANVAS = "Test Canvas Content Description"
+
+
     # ────────────────────────────────────────────────────────────
-    #  CREATE THE CHANNELS
+    #  Create the Channels
     # ────────────────────────────────────────────────────────────
     for ch in channels:
-        create_channel(client, ch["name"], ch["is_private"], ch["description"])
+        create_channel(client, ch["name"], ch["is_private"], ch["description"], ch["create_canvas"], client_name)
 
     print("------------------------------------------------")
     print(f"Done! All channels created for client: {client_name}")
