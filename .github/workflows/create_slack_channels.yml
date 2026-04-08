@@ -1,0 +1,192 @@
+name: New Customer Slack Channel Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      customer_name:
+        description: >
+          Customer slug (lowercase, hyphens only — e.g. "acme-corp", "widget-co").
+          This becomes the identifier in all channel names.
+        required: true
+        type: string
+      customer_display_name:
+        description: >
+          Human-readable display name for the customer (used in channel topics/descriptions).
+          e.g. "Acme Corp", "Widget Co"
+        required: true
+        type: string
+      channel_preset:
+        description: Channel preset to provision
+        required: true
+        type: choice
+        options:
+          - standard          # it-support + private + hr + onboarding (default for new SMB clients)
+          - full              # standard + devops + access-alerts + announcements
+          - minimal           # it-support only (for trial / short-term engagements)
+        default: standard
+
+jobs:
+  create-channels:
+    name: Provision Slack Channels for ${{ inputs.customer_display_name }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate customer slug
+        run: |
+          SLUG="${{ inputs.customer_name }}"
+          if [[ ! "$SLUG" =~ ^[a-z0-9][a-z0-9-]*[a-z0-9]$ ]]; then
+            echo "❌ Invalid customer slug: '$SLUG'"
+            echo "   Must be lowercase alphanumeric with hyphens, no leading/trailing hyphens."
+            exit 1
+          fi
+          echo "✅ Slug valid: $SLUG"
+
+      # ─────────────────────────────────────────────
+      # Build channel list based on selected preset
+      # ─────────────────────────────────────────────
+      - name: Define channels for preset '${{ inputs.channel_preset }}'
+        id: channels
+        run: |
+          SLUG="${{ inputs.customer_name }}"
+          PRESET="${{ inputs.channel_preset }}"
+
+          # Each entry: "channel_name|is_private(true/false)|purpose"
+          STANDARD=(
+            "client_${SLUG}-it-support|false|Public IT support channel for ${SLUG} end users and RCIT team."
+            "client_${SLUG}-it-support-private|true|Private RCIT-only channel for internal ${SLUG} IT coordination."
+            "client_${SLUG}-hr-it-support|true|Private channel for HR + IT onboarding/offboarding coordination."
+            "client_${SLUG}_onboarding_offboarding|true|Private channel for tracking onboarding and offboarding tickets for ${SLUG}."
+          )
+
+          FULL_EXTRAS=(
+            "client_${SLUG}-devops|true|Private channel for DevOps/infrastructure work scoped to ${SLUG}."
+            "client_${SLUG}-access-alerts|false|Automated access change alerts for ${SLUG} (Okta, Entra, etc.)."
+            "client_${SLUG}-it-announcements|false|IT announcements and maintenance notices for ${SLUG} users."
+          )
+
+          MINIMAL=(
+            "client_${SLUG}-it-support|false|Public IT support channel for ${SLUG} end users and RCIT team."
+          )
+
+          case "$PRESET" in
+            minimal)  CHANNELS=("${MINIMAL[@]}") ;;
+            full)     CHANNELS=("${STANDARD[@]}" "${FULL_EXTRAS[@]}") ;;
+            *)        CHANNELS=("${STANDARD[@]}") ;;
+          esac
+
+          # Write to a JSON array file for the next step
+          echo "[" > /tmp/channels.json
+          FIRST=true
+          for ENTRY in "${CHANNELS[@]}"; do
+            IFS='|' read -r NAME PRIVATE PURPOSE <<< "$ENTRY"
+            if [ "$FIRST" = true ]; then FIRST=false; else echo "," >> /tmp/channels.json; fi
+            printf '  {"name": "%s", "is_private": %s, "purpose": "%s"}' \
+              "$NAME" "$PRIVATE" "$PURPOSE" >> /tmp/channels.json
+          done
+          echo "" >> /tmp/channels.json
+          echo "]" >> /tmp/channels.json
+
+          echo "📋 Channels to create:"
+          cat /tmp/channels.json
+
+      # ─────────────────────────────────────────────
+      # Create each channel via Slack API
+      # ─────────────────────────────────────────────
+      - name: Create Slack channels
+        id: create
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          SUCCESS=()
+          SKIPPED=()
+          FAILED=()
+
+          while IFS= read -r CHANNEL; do
+            NAME=$(echo "$CHANNEL" | jq -r '.name')
+            IS_PRIVATE=$(echo "$CHANNEL" | jq -r '.is_private')
+            PURPOSE=$(echo "$CHANNEL" | jq -r '.purpose')
+
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "▶ Creating: #${NAME} (private=${IS_PRIVATE})"
+
+            RESPONSE=$(curl -s -X POST https://slack.com/api/conversations.create \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\": \"${NAME}\", \"is_private\": ${IS_PRIVATE}}")
+
+            OK=$(echo "$RESPONSE" | jq -r '.ok')
+            ERROR=$(echo "$RESPONSE" | jq -r '.error // "none"')
+            CHANNEL_ID=$(echo "$RESPONSE" | jq -r '.channel.id // ""')
+
+            if [ "$OK" = "true" ]; then
+              echo "  ✅ Created: #${NAME} (ID: ${CHANNEL_ID})"
+              SUCCESS+=("$NAME")
+
+              # Set purpose
+              curl -s -X POST https://slack.com/api/conversations.setPurpose \
+                -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"channel\": \"${CHANNEL_ID}\", \"purpose\": \"${PURPOSE}\"}" > /dev/null
+
+            elif [ "$ERROR" = "name_taken" ]; then
+              echo "  ⚠️  Skipped (already exists): #${NAME}"
+              SKIPPED+=("$NAME")
+
+            else
+              echo "  ❌ Failed: #${NAME} — error: ${ERROR}"
+              FAILED+=("$NAME")
+            fi
+
+          done < <(jq -c '.[]' /tmp/channels.json)
+
+          # Summary
+          echo ""
+          echo "════════════════════════════════════════════════"
+          echo "📊 Summary"
+          echo "  ✅ Created : ${#SUCCESS[@]}"
+          echo "  ⚠️  Skipped : ${#SKIPPED[@]}"
+          echo "  ❌ Failed  : ${#FAILED[@]}"
+          echo "════════════════════════════════════════════════"
+
+          if [ "${#FAILED[@]}" -gt 0 ]; then
+            echo ""
+            echo "Failed channels:"
+            for F in "${FAILED[@]}"; do echo "  - $F"; done
+            exit 1
+          fi
+
+      # ─────────────────────────────────────────────
+      # Post summary to internal RCIT Slack channel
+      # ─────────────────────────────────────────────
+      - name: Post completion summary to RCIT
+        if: always()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CUSTOMER: ${{ inputs.customer_display_name }}
+          SLUG: ${{ inputs.customer_name }}
+          PRESET: ${{ inputs.channel_preset }}
+          JOB_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EMOJI="✅"
+          STATUS_TEXT="All channels provisioned successfully."
+          if [ "$JOB_STATUS" != "success" ]; then
+            EMOJI="❌"
+            STATUS_TEXT="Some channels failed — check the workflow logs."
+          fi
+
+          MESSAGE="${EMOJI} *New Customer Slack Setup — ${CUSTOMER}*\n\n"
+          MESSAGE+="• Slug: \`${SLUG}\`\n"
+          MESSAGE+="• Preset: \`${PRESET}\`\n"
+          MESSAGE+="• Status: ${STATUS_TEXT}\n"
+          MESSAGE+="• <${RUN_URL}|View workflow run>\n\n"
+          MESSAGE+="_Triggered by GitHub Actions_"
+
+          curl -s -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"channel\": \"#team_rcit-internal\",
+              \"text\": \"${MESSAGE}\"
+            }" > /dev/null
