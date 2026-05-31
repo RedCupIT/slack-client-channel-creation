@@ -14,6 +14,8 @@ Usage:
 
 Required bot token scopes: channels:manage, chat:write. For pinning the kickoff
 message you also need pins:write (the script degrades gracefully without it).
+channels:history lets a re-run find an already-posted kickoff and pin it instead
+of posting a duplicate; without it a re-run re-posts the kickoff.
 """
 
 import argparse
@@ -150,17 +152,39 @@ def invite_user(token, channel_id, user_id, dry_run):
     return resp.get("error")
 
 
-def post_and_pin(token, channel_id, text, dry_run):
+def find_existing_kickoff(token, channel_id, channel_name):
+    """Return the ts of an already-posted kickoff message, or None.
+
+    Lets a re-run pin the existing kickoff instead of posting a duplicate.
+    Requires channels:history; returns None (so the caller posts a fresh
+    kickoff) if history is unavailable.
+    """
+    marker = f":coffee: *Welcome to #{channel_name} "
+    resp = slack_api(token, "conversations.history", {"channel": channel_id, "limit": 100})
+    if not resp.get("ok"):
+        return None
+    for msg in resp.get("messages", []):
+        if msg.get("text", "").startswith(marker):
+            return msg.get("ts")
+    return None
+
+
+def post_and_pin(token, channel_id, channel_name, text, dry_run):
     if dry_run:
         return None, "dry-run"
-    resp = slack_api(token, "chat.postMessage", {"channel": channel_id, "text": text})
-    if not resp.get("ok"):
-        return None, f"post error: {resp.get('error')}"
-    ts = resp.get("ts")
+    ts = find_existing_kickoff(token, channel_id, channel_name)
+    if ts:
+        prefix = "kickoff exists"
+    else:
+        resp = slack_api(token, "chat.postMessage", {"channel": channel_id, "text": text})
+        if not resp.get("ok"):
+            return None, f"post error: {resp.get('error')}"
+        ts = resp.get("ts")
+        prefix = "posted"
     pin = slack_api(token, "pins.add", {"channel": channel_id, "timestamp": ts})
     if pin.get("ok") or pin.get("error") == "already_pinned":
-        return ts, "posted+pinned"
-    return ts, f"posted (pin failed: {pin.get('error')})"
+        return ts, f"{prefix}+pinned"
+    return ts, f"{prefix} (pin failed: {pin.get('error')})"
 
 
 def main():
@@ -216,7 +240,7 @@ def main():
 
         print(f"    topic : {set_topic(token, cid, topic, dry_run)}")
         print(f"    invite: {invite_user(token, cid, entry['user_id'], dry_run)}")
-        ts, pin_status = post_and_pin(token, cid, kickoff, dry_run)
+        ts, pin_status = post_and_pin(token, cid, name, kickoff, dry_run)
         print(f"    kickoff: {pin_status}")
         print(f"    -> https://redcupit.slack.com/archives/{cid}\n")
 
