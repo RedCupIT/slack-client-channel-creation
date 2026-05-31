@@ -1,0 +1,47 @@
+name: Brew Brain Dump Channels (INT-2477)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Run mode
+        required: true
+        type: choice
+        options:
+          - dry-run   # print what would happen, make no changes (safe default)
+          - execute   # actually create channels, set topics, invite owners, post + pin kickoff
+        default: dry-run
+      announce_channel:
+        description: >
+          Optional: channel name to post the launch announcement to (e.g. "general").
+          Leave blank to skip the announcement.
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  brew-channels:
+    name: Roll out #brew-* channels (${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run brew channel rollout
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.mode }}" = "execute" ]; then
+            ARGS="--execute"
+          fi
+          if [ -n "${{ inputs.announce_channel }}" ]; then
+            ARGS="$ARGS --announce ${{ inputs.announce_channel }}"
+          fi
+          echo "Running: python create_brew_channels.py $ARGS"
+          python create_brew_channels.py $ARGS

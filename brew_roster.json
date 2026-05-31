@@ -1,0 +1,25 @@
+{
+  "_comment": "Red Cup IT #brew-* brain dump channels (INT-2477). Source: active Red Cup IT members in Linear as of 2026-05-22, excluding bots/integrations. Slack user IDs resolved by email. brew-moe-a = Mohammed Almoola (goes by Moe).",
+  "channels": [
+    { "channel": "brew-ahmer",    "name": "Ahmer Nurguerra",     "first_name": "Ahmer",    "email": "ahmer@redcupit.com",          "user_id": "U04BFCF464W" },
+    { "channel": "brew-ammon",    "name": "Ammon Elison",        "first_name": "Ammon",    "email": "ammon@redcupit.com",          "user_id": "U0AC9RVSW3Z" },
+    { "channel": "brew-dan",      "name": "Dan Le",              "first_name": "Dan",      "email": "dan@redcupit.com",            "user_id": "U03186CJ4"   },
+    { "channel": "brew-deepak",   "name": "Deepak Chauhan",      "first_name": "Deepak",   "email": "deepak@redcupit.com",         "user_id": "U01LMQ3HQL8" },
+    { "channel": "brew-didar",    "name": "Didar Karim",         "first_name": "Didar",    "email": "didar@redcupit.com",          "user_id": "U04GYPSRTLY" },
+    { "channel": "brew-ekene",    "name": "Ekene Okeke",         "first_name": "Ekene",    "email": "ekene@redcupit.com",          "user_id": "U07Q6JSS64E" },
+    { "channel": "brew-emma",     "name": "Emmanuel Oladapo",    "first_name": "Emmanuel", "email": "emma@redcupit.com",           "user_id": "U06GATFPJMV" },
+    { "channel": "brew-garrett",  "name": "Garrett Rook",        "first_name": "Garrett",  "email": "garrett@redcupit.com",        "user_id": "U095RA6RHU2" },
+    { "channel": "brew-jeeyun",   "name": "Jeeyun Park",         "first_name": "Jeeyun",   "email": "jeeyun@redcupit.com",         "user_id": "UQECP9YQY"   },
+    { "channel": "brew-joshua",   "name": "Joshua Phillips",     "first_name": "Joshua",   "email": "joshua@redcupit.com",         "user_id": "U09KZ8VE7J9" },
+    { "channel": "brew-kim",      "name": "Kimberly Lao-Lim",    "first_name": "Kim",      "email": "kim@redcupit.com",            "user_id": "U09FWNRF86N" },
+    { "channel": "brew-lukasz",   "name": "Lukasz Czaplicki",    "first_name": "Lukasz",   "email": "lukasz@redcupit.com",         "user_id": "U03KHAK136X" },
+    { "channel": "brew-michael",  "name": "Michael Panico",      "first_name": "Michael",  "email": "michael.panico@redcupit.com", "user_id": "U07V6FDD8F9" },
+    { "channel": "brew-mikaela",  "name": "Mikaela Donelan",     "first_name": "Mikaela",  "email": "mikaela@redcupit.com",        "user_id": "U0B3FK011DE" },
+    { "channel": "brew-moe-a",    "name": "Mohammed Almoola",    "first_name": "Moe",      "email": "mohammed@redcupit.com",       "user_id": "U01GGBPBTRR" },
+    { "channel": "brew-muhammed", "name": "Muhammed Ishaq",      "first_name": "Muhammed", "email": "muhammed@redcupit.com",       "user_id": "U09URGU5S23" },
+    { "channel": "brew-precious", "name": "Precious Nwachukwu",  "first_name": "Precious", "email": "precious@redcupit.com",       "user_id": "U09KZ54TRBP" },
+    { "channel": "brew-prosper",  "name": "Prosper Erhiegueke",  "first_name": "Prosper",  "email": "prosper@redcupit.com",        "user_id": "U04HBCNC6LE" },
+    { "channel": "brew-stan",     "name": "Stanley Owolabi",     "first_name": "Stan",     "email": "stan@redcupit.com",           "user_id": "U03BSJLGKS6" },
+    { "channel": "brew-tayo",     "name": "Temitayo Oloruntoba", "first_name": "Tayo",     "email": "tayo@redcupit.com",           "user_id": "U04EXPYSHED" }
+  ]
+}

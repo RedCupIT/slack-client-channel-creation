@@ -109,6 +109,48 @@ All of standard, plus:
 
 ---
 
+## Brain Dump Channels (`#brew-*`) — INT-2477
+
+In addition to client channels, this repo provisions the internal `#brew-<name>`
+brain dump channels — one public channel per Red Cup IT staff member for thinking
+out loud (inspired by Shopify's `#shhtobi`). Reactions over replies; not a
+deliverables queue.
+
+- **Roster**: [`brew_roster.json`](brew_roster.json) — channel name, display name,
+  email, and Slack user ID for each staff member. Edit this file to add/remove people.
+- **Script**: [`create_brew_channels.py`](create_brew_channels.py) — standard library
+  only (no `pip install`). For each roster entry it creates the public channel
+  (idempotent on `name_taken`), sets the topic
+  (`Brain dump from <Name>. Lurk freely. Reactions over replies.`), invites the
+  owner, and posts + pins a kickoff message.
+- **Workflow**: **"Brew Brain Dump Channels (INT-2477)"** in the Actions tab.
+
+### Run it
+
+Via GitHub Actions (uses the existing `SLACK_BOT_TOKEN` secret):
+1. Actions → **Brew Brain Dump Channels (INT-2477)** → **Run workflow**
+2. `mode`: `dry-run` (default, prints planned actions) or `execute` (applies changes)
+3. `announce_channel` (optional): e.g. `general` to post the launch announcement
+
+Locally:
+```bash
+SLACK_BOT_TOKEN=xoxb-... python create_brew_channels.py            # dry run (default)
+SLACK_BOT_TOKEN=xoxb-... python create_brew_channels.py --execute  # apply
+SLACK_BOT_TOKEN=xoxb-... python create_brew_channels.py --execute --announce general
+```
+
+### Required scopes & limitations
+
+- Token scopes: `channels:manage` and `chat:write` (the README setup above). Pinning
+  the kickoff message additionally needs **`pins:write`** — without it the kickoff
+  is still posted, only the pin is skipped (logged, non-fatal).
+- **Channel owner**: the bot is the channel *creator*. Slack Business+ has no API to
+  transfer channel ownership to another user (that requires Enterprise Grid admin
+  APIs), so each person is **invited as a member** rather than set as owner. "Owner
+  posts first message within 48 hours" remains a manual step for each person.
+
+---
+
 ## Future Enhancements (optional)
 - Trigger from Pylon webhook when a new account is created (instead of manual dispatch)
 - Auto-invite RCIT team members to the new private channels
