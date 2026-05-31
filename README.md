@@ -143,7 +143,11 @@ SLACK_BOT_TOKEN=xoxb-... python create_brew_channels.py --execute --announce gen
 
 - Token scopes: `channels:manage` and `chat:write` (the README setup above). Pinning
   the kickoff message additionally needs **`pins:write`** — without it the kickoff
-  is still posted, only the pin is skipped (logged, non-fatal).
+  is still posted, only the pin is skipped (logged, non-fatal). **`channels:history`**
+  lets a re-run locate an already-posted kickoff and pin it instead of posting a
+  duplicate; without it, re-running `--execute` re-posts the kickoff.
+- **Idempotent kickoff** — on re-run the script finds the existing kickoff per channel
+  (via `channels:history`) and just pins it, so re-running to backfill pins is safe.
 - **Channel owner**: the bot is the channel *creator*. Slack Business+ has no API to
   transfer channel ownership to another user (that requires Enterprise Grid admin
   APIs), so each person is **invited as a member** rather than set as owner. "Owner
