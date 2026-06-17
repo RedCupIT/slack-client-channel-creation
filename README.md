@@ -20,9 +20,11 @@ Before you start, make sure you have:
 1. Go to [https://api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From Scratch**
 2. Name it something like `rcit-channel-bot` and select your workspace
 3. Under **OAuth & Permissions**, add these **Bot Token Scopes**:
-   - `channels:manage` — create public channels
-   - `groups:write` — create private channels
-   - `chat:write` — post summary messages
+   - `channels:manage` — create public channels + set purpose + invite Pylon
+   - `groups:write` — create private channels + invite Pylon
+   - `groups:read` — look up an existing private channel by name (idempotent `name_taken`)
+   - `users:read` — resolve the Pylon member id by name (only needed if `PYLON_SLACK_USER_ID` is not set)
+   - `chat:write` — post the completion summary message
 4. Click **Install to Workspace** → copy the **Bot OAuth Token** (starts with `xoxb-...`)
 
 ### 2. Add the token to GitHub Secrets
@@ -32,6 +34,9 @@ In your GitHub repo → **Settings → Secrets and variables → Actions → New
 | Secret Name | Value |
 |---|---|
 | `SLACK_BOT_TOKEN` | `xoxb-your-token-here` |
+| `PYLON_SLACK_USER_ID` *(optional)* | Slack member id of the Pylon app, e.g. `U0XXXXXXX`. If omitted, the script resolves it by name (needs `users:read`). |
+
+To find Pylon's member id: open Pylon's profile in Slack → **More** → **Copy member ID**.
 
 ### 3. Invite the bot to your internal channel
 
@@ -102,10 +107,29 @@ All of standard, plus:
 
 ## Behavior Notes
 
-- **Idempotent** — if a channel already exists (`name_taken`), it's skipped, not errored.
+- **Idempotent** — if a channel already exists (`name_taken`), it's reused (purpose re-set, Pylon re-invited), not errored.
 - **Purpose auto-set** — each channel gets a description set via API automatically.
+- **Pylon auto-invite** — the Pylon app is invited to every channel so client work is tracked as tickets.
 - **Completion notification** — a summary is posted to `#team_rcit-internal` after every run.
 - **Validation** — the slug is validated before any API calls are made.
+- **Implementation** — channel creation is handled by [`create_client_channels.py`](create_client_channels.py) (standard library only); the workflow just invokes it.
+
+---
+
+## Troubleshooting
+
+### Private channels fail with `restricted_action`
+
+If the run log shows public channels created but every **private** channel fails
+with `error: restricted_action`, this is **not** a code or scope bug. A Slack
+workspace permission forbids the bot from creating private channels.
+
+**Fix (Workspace Owner/Admin):** Slack → **Settings & administration → Workspace
+settings → Permissions → Channel management** → *who can create private channels*
+→ allow all members, or add the `rcit-channel-bot` app to the allowed list.
+Public channel creation is governed by a separate setting and is unaffected.
+
+The script prints this remediation hint inline the first time it sees the error.
 
 ---
 
