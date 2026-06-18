@@ -7,18 +7,24 @@ invites the Pylon app to every channel so client work is tracked as tickets.
 Standard library only (urllib) — no pip install required, runs as-is in CI.
 
 Usage:
-    SLACK_BOT_TOKEN=xoxb-... \\
+    SLACK_USER_TOKEN=xoxp-... \\
         python create_client_channels.py \\
         --slug acme-corp --display-name "Acme Corp" --preset standard
 
 Inputs may also be supplied via environment variables (used by the GitHub
 Actions workflow): CUSTOMER_NAME, CUSTOMER_DISPLAY_NAME, CHANNEL_PRESET.
 
+Auth token (channel create + purpose + Pylon invite): the script prefers
+SLACK_USER_TOKEN (a user/xoxp token) and falls back to SLACK_BOT_TOKEN. A user
+token from a Workspace Admin is required to create *private* channels when the
+workspace restricts private-channel creation to admins/owners — a bot token
+hits 'restricted_action' in that case. The channels are then owned by that user.
+
 Pylon's Slack member id is read from PYLON_SLACK_USER_ID. If unset, the script
 resolves it by scanning the workspace user list for the Pylon app/bot (requires
 the users:read scope). Set PYLON_SLACK_USER_ID to skip the lookup.
 
-Required bot token scopes:
+Required token scopes (user token scopes if using SLACK_USER_TOKEN):
     channels:manage   create public channels + set purpose + invite
     groups:write      create private channels + invite
     groups:read       look up an existing private channel by name (name_taken)
@@ -244,10 +250,12 @@ def main():
         print("  + invite Pylon to each channel")
         return 0
 
-    token = os.environ.get("SLACK_BOT_TOKEN")
+    token = os.environ.get("SLACK_USER_TOKEN") or os.environ.get("SLACK_BOT_TOKEN")
     if not token:
-        print("ERROR: SLACK_BOT_TOKEN environment variable is not set.", file=sys.stderr)
+        print("ERROR: neither SLACK_USER_TOKEN nor SLACK_BOT_TOKEN is set.", file=sys.stderr)
         return 2
+    token_kind = "user" if os.environ.get("SLACK_USER_TOKEN") else "bot"
+    print(f"Using {token_kind} token for channel creation.")
 
     pylon_user_id = resolve_pylon_user_id(token, os.environ.get("PYLON_SLACK_USER_ID", "").strip())
     if pylon_user_id:
@@ -271,6 +279,9 @@ def main():
             failed.append(name)
             if error == "restricted_action" and not restricted_seen:
                 print(RESTRICTED_ACTION_HINT)
+                if token_kind == "bot":
+                    print("    Using SLACK_USER_TOKEN (a Workspace Admin's xoxp token) "
+                          "avoids this without changing the workspace setting.")
                 restricted_seen = True
             print()
             continue

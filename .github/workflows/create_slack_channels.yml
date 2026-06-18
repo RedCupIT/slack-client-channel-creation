@@ -45,6 +45,9 @@ jobs:
       - name: Create Slack channels
         id: create
         env:
+          # A Workspace Admin's user (xoxp) token; required to create private
+          # channels when the workspace restricts that to admins/owners.
+          SLACK_USER_TOKEN: ${{ secrets.SLACK_USER_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           PYLON_SLACK_USER_ID: ${{ secrets.PYLON_SLACK_USER_ID }}
           CUSTOMER_NAME: ${{ inputs.customer_name }}
