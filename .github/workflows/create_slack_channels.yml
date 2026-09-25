@@ -28,7 +28,7 @@ on:
 jobs:
   create-channels:
     name: Provision Slack Channels for ${{ inputs.customer_display_name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Validate customer slug
