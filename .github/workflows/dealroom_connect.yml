@@ -1,0 +1,288 @@
+name: Prospect Deal Room + Slack Connect
+
+# Creates a prospect deal-room channel (#dealroom-<slug>), invites RCIT reps,
+# and sends a Slack Connect invitation to the prospect's email so the channel
+# becomes shared between the two workspaces.
+#
+# Triggered two ways:
+#   1. Manually: Actions tab → "Prospect Deal Room + Slack Connect" → Run workflow.
+#   2. Programmatically: POST a repository_dispatch event with
+#      event_type "prospect-dealroom-connect" (see README for the payload contract,
+#      e.g. fired by the CRM when a deal room's stage reaches "negotiation").
+on:
+  workflow_dispatch:
+    inputs:
+      prospect_slug:
+        description: >
+          Prospect slug (lowercase, hyphens only: e.g. "acme-corp").
+          Becomes #dealroom-<slug> unless channel_name is overridden.
+        required: true
+        type: string
+      prospect_display_name:
+        description: Human-readable prospect name, e.g. "Acme Corp"
+        required: true
+        type: string
+      connect_invite_emails:
+        description: >
+          Comma-separated emails at the prospect that should receive the
+          Slack Connect invitation (one invite is sent per email).
+          Leave blank to only create the internal channel.
+        required: false
+        type: string
+        default: ""
+      rep_emails:
+        description: >
+          Comma-separated @redcupit.com emails of reps to add to the channel.
+          Leave blank to skip rep invites.
+        required: false
+        type: string
+        default: ""
+      external_limited:
+        description: >
+          Invite prospects as external-limited members (can post, cannot invite
+          others/export/rename). Recommended default for deal rooms.
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+      channel_name:
+        description: >
+          Optional exact channel name override (e.g. "ext-acme-redcupit").
+          Must already be lowercase/Slack-legal. Defaults to dealroom-<slug>.
+        required: false
+        type: string
+        default: ""
+      mode:
+        description: dry-run validates and prints the plan; execute applies it
+        required: true
+        type: choice
+        options:
+          - dry-run
+          - execute
+        default: dry-run
+  repository_dispatch:
+    types: [prospect-dealroom-connect]
+
+env:
+  # repository_dispatch callers send these in client_payload; manual runs use inputs.
+  SLUG: ${{ github.event.client_payload.slug || inputs.prospect_slug }}
+  DISPLAY_NAME: ${{ github.event.client_payload.display_name || inputs.prospect_display_name }}
+  CONNECT_EMAILS: ${{ github.event.client_payload.connect_invite_emails || inputs.connect_invite_emails }}
+  REP_EMAILS: ${{ github.event.client_payload.rep_emails || inputs.rep_emails }}
+  EXTERNAL_LIMITED: ${{ github.event.client_payload.external_limited || inputs.external_limited || 'true' }}
+  CHANNEL_NAME_OVERRIDE: ${{ github.event.client_payload.channel_name || inputs.channel_name }}
+  MODE: ${{ github.event.client_payload.mode || inputs.mode || 'execute' }}
+  NOTIFY_CHANNEL: "#team_rcit-internal"
+
+jobs:
+  dealroom-connect:
+    name: Deal room + Slack Connect for ${{ env.DISPLAY_NAME || env.SLUG }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Validate inputs and derive channel name
+        run: |
+          if [[ ! "$SLUG" =~ ^[a-z0-9][a-z0-9-]*[a-z0-9]$ ]]; then
+            echo "❌ Invalid prospect slug: '$SLUG'"
+            echo "   Must be lowercase alphanumeric with hyphens, no leading/trailing hyphens."
+            exit 1
+          fi
+
+          CHANNEL_NAME="${CHANNEL_NAME_OVERRIDE:-dealroom-${SLUG}}"
+          if [[ ! "$CHANNEL_NAME" =~ ^[a-z0-9][a-z0-9_-]*[a-z0-9]$ ]] || [ "${#CHANNEL_NAME}" -gt 80 ]; then
+            echo "❌ Invalid channel name: '$CHANNEL_NAME'"
+            exit 1
+          fi
+          echo "channel_name=$CHANNEL_NAME" >> "$GITHUB_OUTPUT"
+          echo "✅ Slug: $SLUG | Channel: #$CHANNEL_NAME | Mode: $MODE | external_limited=$EXTERNAL_LIMITED"
+        id: derive
+      # note: step-level `if` cannot read env, so email lists are guarded inside run blocks instead
+
+      - name: Create channel (idempotent)
+        id: create
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL_NAME: ${{ steps.derive.outputs.channel_name }}
+        run: |
+          if [ "$MODE" != "execute" ]; then
+            echo "🧪 dry-run: would create/find #$CHANNEL_NAME"
+            echo "channel_id=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          RESPONSE=$(curl -s -X POST https://slack.com/api/conversations.create \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\": \"${CHANNEL_NAME}\", \"is_private\": false}")
+
+          OK=$(echo "$RESPONSE" | jq -r '.ok')
+          ERROR=$(echo "$RESPONSE" | jq -r '.error // "none"')
+          CHANNEL_ID=$(echo "$RESPONSE" | jq -r '.channel.id // ""')
+
+          if [ "$OK" = "true" ]; then
+            echo "✅ Created: #${CHANNEL_NAME} (ID: ${CHANNEL_ID})"
+          elif [ "$ERROR" = "name_taken" ]; then
+            echo "⚠️  #${CHANNEL_NAME} already exists: resolving channel ID"
+            CHANNEL_ID=$(curl -s "https://slack.com/api/conversations.list?limit=1000&exclude_archived=true" \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              | jq -r --arg n "$CHANNEL_NAME" '.channels[] | select(.name == $n) | .id' | head -1)
+            if [ -z "$CHANNEL_ID" ]; then
+              echo "❌ #${CHANNEL_NAME} exists but could not resolve its ID (is it private?)"
+              exit 1
+            fi
+            echo "   Found existing channel ID: $CHANNEL_ID"
+            # Best-effort: the bot must be a member to invite others / post.
+            curl -s -X POST https://slack.com/api/conversations.join \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"channel\": \"${CHANNEL_ID}\"}" > /dev/null || true
+          else
+            echo "❌ Failed to create #${CHANNEL_NAME}: error: ${ERROR}"
+            exit 1
+          fi
+          echo "channel_id=$CHANNEL_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Set channel purpose
+        if: steps.create.outputs.channel_id != ''
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL_ID: ${{ steps.create.outputs.channel_id }}
+          CHANNEL_NAME: ${{ steps.derive.outputs.channel_name }}
+        run: |
+          curl -s -X POST https://slack.com/api/conversations.setPurpose \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"channel\": \"${CHANNEL_ID}\", \"purpose\": \"Deal room for ${DISPLAY_NAME}: shared with the prospect via Slack Connect once the invite is accepted.\"}" > /dev/null
+          echo "✅ Purpose set on #${CHANNEL_NAME}"
+
+      - name: Invite RCIT reps
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL_ID: ${{ steps.create.outputs.channel_id }}
+        run: |
+          if [ -z "$REP_EMAILS" ]; then
+            echo "No rep_emails provided: skipping"
+            exit 0
+          fi
+          if [ "$MODE" != "execute" ]; then
+            echo "🧪 dry-run: would invite reps: $REP_EMAILS"
+            exit 0
+          fi
+          IFS=',' read -ra EMAILS <<< "$REP_EMAILS"
+          for EMAIL in "${EMAILS[@]}"; do
+            EMAIL=$(echo "$EMAIL" | xargs)  # trim whitespace
+            [ -z "$EMAIL" ] && continue
+            USER_ID=$(curl -s -X POST https://slack.com/api/users.lookupByEmail \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"email\": \"${EMAIL}\"}" | jq -r '.user.id // ""')
+            if [ -z "$USER_ID" ]; then
+              echo "  ⚠️  Could not resolve Slack user for ${EMAIL}: skipping"
+              continue
+            fi
+            INV=$(curl -s -X POST https://slack.com/api/conversations.invite \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"channel\": \"${CHANNEL_ID}\", \"users\": \"${USER_ID}\"}")
+            if [ "$(echo "$INV" | jq -r '.ok')" = "true" ]; then
+              echo "  ✅ Invited rep ${EMAIL} (${USER_ID})"
+            else
+              ERR=$(echo "$INV" | jq -r '.error // "unknown"')
+              # already_in_channel is fine: treat as success
+              if [ "$ERR" = "already_in_channel" ]; then
+                echo "  ⚠️  ${EMAIL} already in channel"
+              else
+                echo "  ❌ Failed to invite ${EMAIL}: ${ERR}"
+              fi
+            fi
+          done
+
+      - name: Send Slack Connect invitations to prospect
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL_ID: ${{ steps.create.outputs.channel_id }}
+          CHANNEL_NAME: ${{ steps.derive.outputs.channel_name }}
+        run: |
+          if [ -z "$CONNECT_EMAILS" ]; then
+            echo "No connect_invite_emails provided: skipping"
+            exit 0
+          fi
+          if [ "$MODE" != "execute" ]; then
+            echo "🧪 dry-run: would send Slack Connect invites (external_limited=$EXTERNAL_LIMITED) to: $CONNECT_EMAILS"
+            exit 0
+          fi
+          IFS=',' read -ra EMAILS <<< "$CONNECT_EMAILS"
+          for EMAIL in "${EMAILS[@]}"; do
+            EMAIL=$(echo "$EMAIL" | xargs)
+            [ -z "$EMAIL" ] && continue
+            RESP=$(curl -s -X POST https://slack.com/api/conversations.inviteShared \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"channel\": \"${CHANNEL_ID}\", \"emails\": [\"${EMAIL}\"], \"external_limited\": ${EXTERNAL_LIMITED}}")
+            if [ "$(echo "$RESP" | jq -r '.ok')" = "true" ]; then
+              INVITE_ID=$(echo "$RESP" | jq -r '.invite_id // ""')
+              echo "  ✅ Connect invite sent to ${EMAIL} (invite_id: ${INVITE_ID})"
+            else
+              ERR=$(echo "$RESP" | jq -r '.error // "unknown"')
+              echo "  ❌ Connect invite failed for ${EMAIL}: ${ERR}"
+              if [ "$ERR" = "restricted_action" ]; then
+                echo "     ℹ️  Workspace Slack Connect permissions may disallow this invite type , "
+                echo "        check Manage permissions for inviting people to channels in workspace settings."
+              fi
+            fi
+          done
+          echo ""
+          echo "NOTE: #${CHANNEL_NAME} becomes a Slack Connect channel when the prospect accepts."
+
+      - name: Post kickoff message in deal room
+        if: steps.create.outputs.channel_id != ''
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL_ID: ${{ steps.create.outputs.channel_id }}
+          CHANNEL_NAME: ${{ steps.derive.outputs.channel_name }}
+        run: |
+          MESSAGE="🤝 *Deal room opened for ${DISPLAY_NAME}*\n"
+          MESSAGE+="• Channel: #${CHANNEL_NAME}\n"
+          MESSAGE+="• Slack Connect invite sent to: ${CONNECT_EMAILS:-none}\n"
+          MESSAGE+="• RCIT reps added: ${REP_EMAILS:-none}\n\n"
+          MESSAGE+="_Internal note until the prospect accepts: keep internal-only discussion in the private internal channel._"
+          curl -s -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"channel\": \"${CHANNEL_ID}\", \"text\": \"${MESSAGE}\"}" > /dev/null
+          echo "✅ Kickoff posted in #${CHANNEL_NAME}"
+
+      - name: Post completion summary to RCIT
+        if: always()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL_NAME: ${{ steps.derive.outputs.channel_name }}
+          JOB_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EMOJI="✅"
+          STATUS_TEXT="Deal room provisioned."
+          if [ "$JOB_STATUS" != "success" ]; then
+            EMOJI="❌"
+            STATUS_TEXT="Provisioning hit errors: check the workflow logs."
+          fi
+          if [ "$MODE" != "execute" ]; then
+            EMOJI="🧪"
+            STATUS_TEXT="Dry run only: nothing was created."
+          fi
+
+          MESSAGE="${EMOJI} *Prospect Deal Room: ${DISPLAY_NAME}*\n\n"
+          MESSAGE+="• Channel: \`#${CHANNEL_NAME:-dealroom-${SLUG}}\`\n"
+          MESSAGE+="• Slack Connect invites: ${CONNECT_EMAILS:-none}\n"
+          MESSAGE+="• Reps: ${REP_EMAILS:-none}\n"
+          MESSAGE+="• external_limited: ${EXTERNAL_LIMITED}\n"
+          MESSAGE+="• Status: ${STATUS_TEXT}\n"
+          MESSAGE+="• <${RUN_URL}|View workflow run>\n\n"
+          MESSAGE+="_Triggered by ${GITHUB_EVENT_NAME}_"
+
+          curl -s -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"channel\": \"${NOTIFY_CHANNEL}\", \"text\": \"${MESSAGE}\"}" > /dev/null

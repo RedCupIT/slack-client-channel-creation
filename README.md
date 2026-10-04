@@ -109,6 +109,72 @@ All of standard, plus:
 
 ---
 
+## Prospect Deal Rooms + Slack Connect (`#dealroom-*`)
+
+**"Prospect Deal Room + Slack Connect"** (`.github/workflows/dealroom_connect.yml`)
+provisions a prospect deal-room channel and sends the prospect a **Slack Connect**
+invitation so the channel is shared between the two workspaces.
+
+### Additional bot scopes required
+
+The existing bot app needs these extra OAuth scopes (re-install the app after adding):
+
+| Scope | Used for |
+|---|---|
+| `conversations.connect:write` | `conversations.inviteShared`: sending Slack Connect invites |
+| `users:read.email` | `users.lookupByEmail`: resolving rep emails to user IDs |
+| `channels:read` | `conversations.list`: resolving the channel ID when `name_taken` |
+| `channels:join` | `conversations.join`: bot joins a pre-existing channel before inviting |
+
+Workspace prerequisites: both workspaces must be on a paid Slack plan, and
+**Manage permissions for inviting people to channels** must permit the chosen
+invite type; otherwise `conversations.inviteShared` returns `restricted_action`.
+
+### Run it
+
+Manually: Actions → **Prospect Deal Room + Slack Connect** → Run workflow.
+
+- `prospect_slug` / `prospect_display_name`: e.g. `acme-corp` / `Acme Corp`
+- `channel_name`: optional override (default `dealroom-<slug>`; use `ext-<name>-redcupit` for the external naming convention)
+- `rep_emails`: comma-separated `@redcupit.com` emails to add to the channel
+- `connect_invite_emails`: comma-separated prospect emails; one Connect invite per email
+- `external_limited`: `true` recommended. Prospects can post but not invite/export/rename
+- `mode`: `dry-run` (default) prints the plan; `execute` applies it
+
+### Trigger it from another system (CRM deal stage, n8n, Linear, …)
+
+Send a `repository_dispatch` event: the workflow runs in `execute` mode:
+
+```bash
+curl -X POST https://api.github.com/repos/RedCupIT/slack-client-channel-creation/dispatches \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  -d '{
+    "event_type": "prospect-dealroom-connect",
+    "client_payload": {
+      "slug": "acme-corp",
+      "display_name": "Acme Corp",
+      "connect_invite_emails": "cto@acme.example,it@acme.example",
+      "rep_emails": "dan@redcupit.com",
+      "external_limited": "true"
+    }
+  }'
+```
+
+`client_payload` keys mirror the manual inputs (`slug`, `display_name`,
+`connect_invite_emails`, `rep_emails`, `external_limited`, `channel_name`, `mode`).
+
+### Behavior notes
+
+- **Idempotent**: `name_taken` resolves the existing channel and continues;
+  re-invites that return `already_in_channel` are non-fatal.
+- The channel becomes a Slack Connect channel only when the prospect **accepts**
+  the emailed invite; until then treat it as internal.
+- Invite failures (e.g. `restricted_action`, unresolved rep email) are logged
+  and reported in the `#team_rcit-internal` summary: they do not fail the run.
+
+---
+
 ## Brain Dump Channels (`#brew-*`) — INT-2477
 
 In addition to client channels, this repo provisions the internal `#brew-<name>`
