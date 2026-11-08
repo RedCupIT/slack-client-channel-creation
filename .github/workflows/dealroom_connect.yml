@@ -29,14 +29,14 @@ on:
           Leave blank to only create the internal channel.
         required: false
         type: string
-        default: ""
+        default: ''
       rep_emails:
         description: >
           Comma-separated @redcupit.com emails of reps to add to the channel.
           Leave blank to skip rep invites.
         required: false
         type: string
-        default: ""
+        default: ''
       external_limited:
         description: >
           Invite prospects as external-limited members (can post, cannot invite
@@ -44,16 +44,16 @@ on:
         required: true
         type: choice
         options:
-          - "true"
-          - "false"
-        default: "true"
+          - 'true'
+          - 'false'
+        default: 'true'
       channel_name:
         description: >
           Optional exact channel name override (e.g. "ext-acme-redcupit").
           Must already be lowercase/Slack-legal. Defaults to dealroom-<slug>.
         required: false
         type: string
-        default: ""
+        default: ''
       mode:
         description: dry-run validates and prints the plan; execute applies it
         required: true
@@ -68,13 +68,17 @@ on:
 env:
   # repository_dispatch callers send these in client_payload; manual runs use inputs.
   SLUG: ${{ github.event.client_payload.slug || inputs.prospect_slug }}
-  DISPLAY_NAME: ${{ github.event.client_payload.display_name || inputs.prospect_display_name }}
-  CONNECT_EMAILS: ${{ github.event.client_payload.connect_invite_emails || inputs.connect_invite_emails }}
+  DISPLAY_NAME: ${{ github.event.client_payload.display_name ||
+    inputs.prospect_display_name }}
+  CONNECT_EMAILS: ${{ github.event.client_payload.connect_invite_emails ||
+    inputs.connect_invite_emails }}
   REP_EMAILS: ${{ github.event.client_payload.rep_emails || inputs.rep_emails }}
-  EXTERNAL_LIMITED: ${{ github.event.client_payload.external_limited || inputs.external_limited || 'true' }}
-  CHANNEL_NAME_OVERRIDE: ${{ github.event.client_payload.channel_name || inputs.channel_name }}
+  EXTERNAL_LIMITED: ${{ github.event.client_payload.external_limited ||
+    inputs.external_limited || 'true' }}
+  CHANNEL_NAME_OVERRIDE: ${{ github.event.client_payload.channel_name ||
+    inputs.channel_name }}
   MODE: ${{ github.event.client_payload.mode || inputs.mode || 'execute' }}
-  NOTIFY_CHANNEL: "#team_rcit-internal"
+  NOTIFY_CHANNEL: '#team_rcit-internal'
 
 jobs:
   dealroom-connect:
@@ -260,7 +264,8 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           CHANNEL_NAME: ${{ steps.derive.outputs.channel_name }}
           JOB_STATUS: ${{ job.status }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository
+            }}/actions/runs/${{ github.run_id }}
         run: |
           EMOJI="✅"
           STATUS_TEXT="Deal room provisioned."
@@ -286,3 +291,6 @@ jobs:
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{\"channel\": \"${NOTIFY_CHANNEL}\", \"text\": \"${MESSAGE}\"}" > /dev/null
+    permissions:
+      contents: read
+    environment: ci

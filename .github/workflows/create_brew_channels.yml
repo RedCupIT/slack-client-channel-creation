@@ -17,7 +17,7 @@ on:
           Leave blank to skip the announcement.
         required: false
         type: string
-        default: ""
+        default: ''
 
 jobs:
   brew-channels:
@@ -30,7 +30,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Run brew channel rollout
         env:
@@ -45,3 +45,6 @@ jobs:
           fi
           echo "Running: python create_brew_channels.py $ARGS"
           python create_brew_channels.py $ARGS
+    permissions:
+      contents: read
+    environment: ci
