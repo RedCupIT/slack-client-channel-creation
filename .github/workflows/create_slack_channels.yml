@@ -167,8 +167,9 @@ jobs:
           SLUG: ${{ inputs.customer_name }}
           PRESET: ${{ inputs.channel_preset }}
           JOB_STATUS: ${{ job.status }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
+          RUN_URL: ${{ github.server_url }}/${{ github.repository
+            }}/actions/runs/${{ github.run_id }}
+        run: |-
           EMOJI="✅"
           STATUS_TEXT="All channels provisioned successfully."
           if [ "$JOB_STATUS" != "success" ]; then
@@ -190,3 +191,6 @@ jobs:
               \"channel\": \"#team_rcit-internal\",
               \"text\": \"${MESSAGE}\"
             }" > /dev/null
+    permissions:
+      contents: read
+    environment: operations
